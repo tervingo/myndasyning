@@ -108,8 +108,8 @@ class WallpaperSlideshow:
         """Set up the keyboard shortcut"""
         try:
             keyboard.unhook_all()  # Clear any existing hooks
-            keyboard.add_hotkey('ctrl+alt+ñ', self.force_new_wallpaper, suppress=True)
-            self.logger.info("Keyboard shortcut (Ctrl+Alt+N) registered successfully")
+            keyboard.add_hotkey('ctrl+alt+y', self.force_new_wallpaper, suppress=True)
+            self.logger.info("Keyboard shortcut (Ctrl+Alt+Y) registered successfully")
         except Exception as e:
             self.logger.error(f"Failed to register keyboard shortcut: {e}")
 
@@ -261,7 +261,7 @@ class WallpaperSlideshow:
         """Run the wallpaper slideshow"""
         self.logger.info(f"Starting wallpaper slideshow (interval: {interval_minutes}m, query: {query})")
         print(f"Starting wallpaper slideshow with {interval_minutes} minute intervals")
-        print(f"Press Ctrl+Alt+N for new wallpaper or use the floating button")
+        print(f"Press Ctrl+Alt+Y for new wallpaper or use the floating button")
         print(f"Searching for images matching: {query}")
         
         def auto_changer():
