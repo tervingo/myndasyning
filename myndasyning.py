@@ -97,9 +97,24 @@ class WallpaperSlideshow:
             widget.bind('<Button-1>', self.start_drag)
             widget.bind('<B1-Motion>', self.drag)
         
-        # Position window in top-right corner
+        # Position window at the right side, vertically centered
+        # First, update the window to calculate its actual size
+        self.button_window.update_idletasks()
+        
+        # Get screen dimensions
         screen_width = self.button_window.winfo_screenwidth()
-        self.button_window.geometry(f'+{screen_width-200}+50')
+        screen_height = self.button_window.winfo_screenheight()
+        
+        # Get window dimensions
+        window_width = self.button_window.winfo_width()
+        window_height = self.button_window.winfo_height()
+        
+        # Calculate position
+        x_position = screen_width - window_width - 20  # 20 pixels padding from right edge
+        y_position = (screen_height - window_height) // 2
+        
+        # Set window position
+        self.button_window.geometry(f"+{x_position}+{y_position}")
         
         # Protocol handler for window close button
         self.button_window.protocol("WM_DELETE_WINDOW", self.toggle_button)
