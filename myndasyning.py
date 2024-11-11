@@ -23,6 +23,10 @@ class WallpaperSlideshow:
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(exist_ok=True)
         
+        # Create favorites directory
+        self.favorites_dir = Path("unsplash_favorites")
+        self.favorites_dir.mkdir(exist_ok=True)
+
         # Windows API constant for setting wallpaper
         self.SPI_SETDESKWALLPAPER = 0x0014
         self.SPIF_UPDATEINIFILE = 0x01
@@ -30,6 +34,7 @@ class WallpaperSlideshow:
         
         # Control flags
         self.running = True
+        self.timer_active = True
         self.current_wallpaper = None
         self.drag_data = {"x": 0, "y": 0}
         
@@ -67,7 +72,7 @@ class WallpaperSlideshow:
         )
         self.frame.pack(padx=2, pady=2)
         
-        # Create button with modern styling
+        # Change wallpaper button
         self.change_button = tk.Button(
             self.frame,
             text="New Wallpaper",
@@ -80,8 +85,38 @@ class WallpaperSlideshow:
             font=('Segoe UI', 9),
             cursor='hand2'
         )
-        self.change_button.pack()
+        self.change_button.pack(pady=5)
+
+       # Timer control button
+        self.timer_button = tk.Button(
+            self.frame,
+            text="Pause Timer",
+            command=self.toggle_timer,
+            bg='#FF9800',
+            fg='white',
+            relief='flat',
+            pady=8,
+            padx=15,
+            font=('Segoe UI', 9),
+            cursor='hand2'
+        )
+        self.timer_button.pack(pady=5)
         
+        # Favorite button
+        self.favorite_button = tk.Button(
+            self.frame,
+            text="Save to Favorites",
+            command=self.save_to_favorites,
+            bg='#4CAF50',
+            fg='white',
+            relief='flat',
+            pady=8,
+            padx=15,
+            font=('Segoe UI', 9),
+            cursor='hand2'
+        )
+        self.favorite_button.pack(pady=5)
+
         # Status label
         self.status_label = tk.Label(
             self.frame,
@@ -92,11 +127,11 @@ class WallpaperSlideshow:
         )
         self.status_label.pack(pady=(5, 2))
         
-        # Bind dragging events to both frame and button
-        for widget in (self.frame, self.change_button):
+        # Bind dragging events to all widgets
+        for widget in (self.frame, self.change_button, self.timer_button, self.favorite_button):
             widget.bind('<Button-1>', self.start_drag)
             widget.bind('<B1-Motion>', self.drag)
-        
+         
         # Position window at the right side, vertically centered
         # First, update the window to calculate its actual size
         self.button_window.update_idletasks()
@@ -118,6 +153,55 @@ class WallpaperSlideshow:
         
         # Protocol handler for window close button
         self.button_window.protocol("WM_DELETE_WINDOW", self.toggle_button)
+
+    def toggle_timer(self):
+        """Toggle the automatic wallpaper timer"""
+        self.timer_active = not self.timer_active
+        
+        if self.timer_active:
+            self.timer_button.config(
+                text="Pause Timer",
+                bg='#FF9800'
+            )
+            self.update_status("Timer resumed", '#4CAF50')
+        else:
+            self.timer_button.config(
+                text="Resume Timer",
+                bg='#f44336'
+            )
+            self.update_status("Timer paused", '#FF9800')
+        
+        threading.Timer(3, lambda: self.update_status("Ready")).start()
+
+    def save_to_favorites(self):
+        """Save the current wallpaper to favorites folder"""
+        try:
+            if not self.current_wallpaper:
+                self.update_status("No wallpaper to save", '#f44336')
+                return
+                
+            # Create a copy of the current wallpaper in favorites folder
+            source_path = Path(self.current_wallpaper)
+            if not source_path.exists():
+                self.update_status("Wallpaper file not found", '#f44336')
+                return
+                
+            # Generate a filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            target_path = self.favorites_dir / f"favorite_{timestamp}.jpg"
+            
+            # Copy the file
+            import shutil
+            shutil.copy2(source_path, target_path)
+            
+            self.update_status("Saved to favorites!", '#4CAF50')
+            threading.Timer(3, lambda: self.update_status("Ready")).start()
+            
+            self.logger.info(f"Saved wallpaper to favorites: {target_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Error saving to favorites: {e}")
+            self.update_status("Error saving favorite", '#f44336')
 
     def setup_keyboard_shortcut(self):
         """Set up the keyboard shortcut"""
@@ -272,17 +356,18 @@ class WallpaperSlideshow:
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
 
-    def run(self, interval_minutes=30, query="nature"):
+    def run(self, interval_minutes=60, query="nature"):
         """Run the wallpaper slideshow"""
         self.logger.info(f"Starting wallpaper slideshow (interval: {interval_minutes}m, query: {query})")
         print(f"Starting wallpaper slideshow with {interval_minutes} minute intervals")
-        print(f"Press Ctrl+Alt+Y for new wallpaper or use the floating button")
+        print(f"Press Ctrl+Alt+N for new wallpaper or use the floating button")
         print(f"Searching for images matching: {query}")
         
         def auto_changer():
             while self.running:
                 try:
-                    self.force_new_wallpaper()
+                    if self.timer_active:  # Only change wallpaper if timer is active
+                        self.force_new_wallpaper()
                     time.sleep(interval_minutes * 60)
                 except Exception as e:
                     self.logger.error(f"Error in auto_changer: {e}")
