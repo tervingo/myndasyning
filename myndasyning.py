@@ -14,17 +14,17 @@ from io import BytesIO
 import logging
 
 class WallpaperSlideshow:
-    def __init__(self, unsplash_access_key, download_dir="wallpapers"):
+    def __init__(self, pixabay_api_key, download_dir="wallpapers"):
         # Set up logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
-        self.unsplash_access_key = unsplash_access_key
+        self.pixabay_api_key = pixabay_api_key
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(exist_ok=True)
         
         # Create favorites directory
-        self.favorites_dir = Path("unsplash_favorites")
+        self.favorites_dir = Path("pixabay_favorites")
         self.favorites_dir.mkdir(exist_ok=True)
 
         # Windows API constant for setting wallpaper
@@ -275,20 +275,40 @@ class WallpaperSlideshow:
             self.update_status("Error changing wallpaper", '#f44336')
 
     def download_image(self, query="nature"):
-        """Download a random image from Unsplash based on query"""
+        """Download a random image from Pixabay based on query"""
         try:
-            headers = {
-                "Authorization": f"Client-ID {self.unsplash_access_key}"
+            # Pixabay API endpoint
+            url = "https://pixabay.com/api/"
+            
+            # Parameters for the API request
+            params = {
+                'key': self.pixabay_api_key,
+                'q': query,
+                'orientation': 'horizontal',
+                'image_type': 'photo',
+                'min_width': 1920,  # Ensure HD quality
+                'min_height': 1080,
+                'per_page': 100,  # Get multiple images to choose from
+                'safesearch': 'true'
             }
             
-            # Get random photo URL
-            url = f"https://api.unsplash.com/photos/random?query={query}&orientation=landscape"
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()  # Raise exception for bad status codes
+            # Get image list
+            response = requests.get(url, params=params)
+            response.raise_for_status()
             
             data = response.json()
-            image_url = data['urls']['raw']
-            photographer = data['user']['name']
+            
+            if not data['hits']:
+                self.logger.error("No images found for the query")
+                return None
+            
+            # Choose a random image from the results
+            import random
+            image = random.choice(data['hits'])
+            
+            # Get the large version of the image
+            image_url = image['largeImageURL']
+            photographer = image['user']
             
             # Download the image
             image_response = requests.get(image_url)
@@ -311,6 +331,7 @@ class WallpaperSlideshow:
         except Exception as e:
             self.logger.error(f"Unexpected error in download_image: {e}")
             return None
+
 
     def set_wallpaper(self, image_path):
         """Set the Windows wallpaper"""
@@ -384,8 +405,8 @@ class WallpaperSlideshow:
             self.logger.error(f"Error in main loop: {e}")
 
 if __name__ == "__main__":
-    # You'll need to sign up for a free Unsplash API key at: https://unsplash.com/developers
-    UNSPLASH_ACCESS_KEY = "krmfxmLnYYK29-umX4-pmN_09dkbHqJx4V5BYW8cdm4"
+     # You'll need to sign up for a free Pixabay API key at: https://pixabay.com/api/docs/
+    PIXABAY_API_KEY = "47072981-33da36a25681369bbebf56d39"
     
-    slideshow = WallpaperSlideshow(UNSPLASH_ACCESS_KEY)
+    slideshow = WallpaperSlideshow(PIXABAY_API_KEY)
     slideshow.run(interval_minutes=30, query="nature")
