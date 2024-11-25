@@ -12,6 +12,7 @@ import tkinter as tk
 from pystray import Icon, Menu, MenuItem
 from io import BytesIO
 import logging
+from tkinter import filedialog
 
 class WallpaperSlideshow:
     def __init__(self, pixabay_api_key, download_dir="wallpapers"):
@@ -24,7 +25,7 @@ class WallpaperSlideshow:
         self.download_dir.mkdir(exist_ok=True)
         
         # Create favorites directory
-        self.favorites_dir = Path("pixabay_favorites")
+        self.favorites_dir = Path("wallpapers")
         self.favorites_dir.mkdir(exist_ok=True)
 
         # Windows API constant for setting wallpaper
@@ -117,6 +118,22 @@ class WallpaperSlideshow:
         )
         self.favorite_button.pack(pady=5)
 
+        # Load from favorites button
+        self.load_favorite_button = tk.Button(
+            self.frame,
+            text="Load from Favorites",
+            command=self.load_from_favorites,
+            bg='#9C27B0',  # Purple color
+            fg='white',
+            relief='flat',
+            pady=8,
+            padx=15,
+            font=('Segoe UI', 9),
+            cursor='hand2'
+        )
+        self.load_favorite_button.pack(pady=5)
+
+
         # Status label
         self.status_label = tk.Label(
             self.frame,
@@ -128,7 +145,7 @@ class WallpaperSlideshow:
         self.status_label.pack(pady=(5, 2))
         
         # Bind dragging events to all widgets
-        for widget in (self.frame, self.change_button, self.timer_button, self.favorite_button):
+        for widget in (self.frame, self.change_button, self.timer_button, self.favorite_button, self.load_favorite_button):
             widget.bind('<Button-1>', self.start_drag)
             widget.bind('<B1-Motion>', self.drag)
          
@@ -202,6 +219,41 @@ class WallpaperSlideshow:
         except Exception as e:
             self.logger.error(f"Error saving to favorites: {e}")
             self.update_status("Error saving favorite", '#f44336')
+
+    def load_from_favorites(self):
+        """Load and set wallpaper from favorites folder"""
+        try:
+            # Check if favorites directory exists and has files
+            if not self.favorites_dir.exists() or not any(self.favorites_dir.glob("*.jpg")):
+                self.update_status("No favorites found", '#f44336')
+                return
+
+            # Open file dialog in favorites directory
+            filepath = filedialog.askopenfilename(
+                initialdir=self.favorites_dir,
+                title="Select Favorite Wallpaper",
+                filetypes=(("JPEG files", "*.jpg"), ("All files", "*.*"))
+            )
+
+            if filepath:  # If a file was selected
+                # Set as wallpaper
+                self.set_wallpaper(filepath)
+                self.current_wallpaper = filepath
+                
+                # Pause the timer
+                if self.timer_active:
+                    self.toggle_timer()  # This will pause the timer
+                
+                self.update_status("Favorite wallpaper set!", '#4CAF50')
+                threading.Timer(3, lambda: self.update_status("Ready")).start()
+                
+                self.logger.info(f"Loaded favorite wallpaper: {filepath}")
+            else:
+                self.update_status("No file selected", '#FF9800')
+
+        except Exception as e:
+            self.logger.error(f"Error loading favorite: {e}")
+            self.update_status("Error loading favorite", '#f44336')
 
     def setup_keyboard_shortcut(self):
         """Set up the keyboard shortcut"""
