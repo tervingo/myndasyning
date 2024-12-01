@@ -13,14 +13,17 @@ from pystray import Icon, Menu, MenuItem
 from io import BytesIO
 import logging
 from tkinter import filedialog
+import random
+from urllib.parse import urlparse
 
 class WallpaperSlideshow:
-    def __init__(self, pixabay_api_key, download_dir="wallpapers"):
+    def __init__(self, flickr_api_key, flickr_api_secret, download_dir="wallpapers"):
         # Set up logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
-        self.pixabay_api_key = pixabay_api_key
+        self.flickr_api_key = flickr_api_key
+        self.flickr_api_secret = flickr_api_secret
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(exist_ok=True)
         
@@ -327,40 +330,52 @@ class WallpaperSlideshow:
             self.update_status("Error changing wallpaper", '#f44336')
 
     def download_image(self, query="nature"):
-        """Download a random image from Pixabay based on query"""
+        """Download a random image from Flickr based on query"""
         try:
-            # Pixabay API endpoint
-            url = "https://pixabay.com/api/"
+            # Flickr API endpoint for photo search
+            base_url = "https://www.flickr.com/services/rest/"
             
             # Parameters for the API request
             params = {
-                'key': self.pixabay_api_key,
-                'q': query,
-                'orientation': 'horizontal',
-                'image_type': 'photo',
-                'min_width': 1920,  # Ensure HD quality
-                'min_height': 1080,
-                'per_page': 100,  # Get multiple images to choose from
-                'safesearch': 'true'
+                'method': 'flickr.photos.search',
+                'api_key': self.flickr_api_key,
+                'text': query,
+                'license': '4,5,6,7',  # Use Creative Commons licensed photos
+                'sort': 'relevance',
+                'media': 'photos',
+                'extras': 'url_k,owner_name',  # Request large size (2048px) and photographer name
+                'format': 'json',
+                'nojsoncallback': 1,
+                'per_page': 100,
+                'page': 1,
+                'content_type': 1,  # Photos only
+                'safe_search': 1,  # Safe content only
+                'min_taken_date': '2000-01-01'  # Ensure reasonable photo quality
             }
             
             # Get image list
-            response = requests.get(url, params=params)
+            response = requests.get(base_url, params=params)
             response.raise_for_status()
             
             data = response.json()
             
-            if not data['hits']:
+            if not data.get('photos', {}).get('photo', []):
                 self.logger.error("No images found for the query")
                 return None
             
+            # Filter for photos that have the 'url_k' (large size) available
+            suitable_photos = [photo for photo in data['photos']['photo'] if 'url_k' in photo]
+            
+            if not suitable_photos:
+                self.logger.error("No suitable high-resolution images found")
+                return None
+            
             # Choose a random image from the results
-            import random
-            image = random.choice(data['hits'])
+            photo = random.choice(suitable_photos)
             
             # Get the large version of the image
-            image_url = image['largeImageURL']
-            photographer = image['user']
+            image_url = photo['url_k']
+            photographer = photo['ownername']
             
             # Download the image
             image_response = requests.get(image_url)
@@ -441,7 +456,7 @@ class WallpaperSlideshow:
                 try:
                     if self.timer_active:  # Only change wallpaper if timer is active
                         self.force_new_wallpaper()
-                    time.sleep(interval_minutes * 60)
+                    time.sleep(interval_minutes * 10)
                 except Exception as e:
                     self.logger.error(f"Error in auto_changer: {e}")
                     time.sleep(60)
@@ -457,8 +472,9 @@ class WallpaperSlideshow:
             self.logger.error(f"Error in main loop: {e}")
 
 if __name__ == "__main__":
-     # You'll need to sign up for a free Pixabay API key at: https://pixabay.com/api/docs/
-    PIXABAY_API_KEY = "47072981-33da36a25681369bbebf56d39"
+    # You'll need to sign up for a Flickr API key at: https://www.flickr.com/services/apps/create/
+    FLICKR_API_KEY = "da65ad8de193149ff9348abf03c231db"
+    FLICKR_API_SECRET = "81afa406bfe808fb"
     
-    slideshow = WallpaperSlideshow(PIXABAY_API_KEY)
+    slideshow = WallpaperSlideshow(FLICKR_API_KEY, FLICKR_API_SECRET)
     slideshow.run(interval_minutes=30, query="nature")
