@@ -9,12 +9,178 @@ from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageTk
 import tkinter as tk
+from tkinter import ttk
 from pystray import Icon, Menu, MenuItem
 from io import BytesIO
 import logging
 from tkinter import filedialog
 import random
 from urllib.parse import urlparse
+
+class KeywordSelectionDialog:
+    def __init__(self, parent):
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Select Search Keywords")
+        self.dialog.geometry("400x500")
+        self.dialog.resizable(False, False)
+        
+        # Make dialog modal
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # Center the dialog
+        self.dialog.geometry("+%d+%d" % (
+            parent.winfo_rootx() + parent.winfo_width()/2 - 200,
+            parent.winfo_rooty() + parent.winfo_height()/2 - 250))
+        
+        self.selected_keywords = set()
+        self.custom_keywords = set()
+        self.keyword_vars = {}  # Move this to class level
+        self.init_ui()
+
+    def init_ui(self):
+        # Predefined keyword categories
+        self.categories = {
+            'Subjects': [
+                'nature', 'wildlife', 'landscape', 'sunset', 'sunrise',
+                'portrait', 'candid', 'people', 'street photography',
+                'architecture', 'urban', 'cityscape', 'buildings',
+                'macro', 'closeup', 'detail',
+                'travel', 'wanderlust',
+                'food', 'cuisine',
+                'abstract', 'minimal',
+                'black and white', 'monochrome',
+                'wedding', 'event'
+            ],
+            'Technical': [
+                'HDR', 'bokeh', 'long exposure', 'panorama',
+                'aerial', 'silhouette', 'vintage', 'infrared'
+            ]
+        }
+
+        # Create main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Add description label
+        ttk.Label(main_frame, 
+                 text="Select keywords for image search.\nYou can choose multiple keywords.",
+                 wraplength=380).pack(pady=(0, 10))
+
+        # Create notebook for tabs
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        # Style configuration for better visibility
+        style = ttk.Style()
+        style.configure('Keyword.TCheckbutton', padding=2)
+
+        # Create tabs for each category
+        for category, keywords in self.categories.items():
+            # Create a frame for the tab
+            tab = ttk.Frame(notebook)
+            notebook.add(tab, text=category)
+            
+            # Create canvas for scrolling
+            canvas = tk.Canvas(tab, height=250)
+            scrollbar = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+            
+            # Create frame for checkbuttons
+            checkbox_frame = ttk.Frame(canvas)
+            
+            # Add checkbuttons for keywords
+            for keyword in sorted(keywords):
+                var = tk.BooleanVar(value=False)
+                self.keyword_vars[keyword] = var  # Store the variable
+                cb = ttk.Checkbutton(
+                    checkbox_frame,
+                    text=keyword,
+                    variable=var,
+                    command=lambda k=keyword, v=var: self.toggle_keyword(k)
+                )
+                cb.pack(anchor="w", pady=2, padx=5, fill=tk.X)
+
+            # Configure canvas and scrolling
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            # Create window inside canvas
+            canvas.create_window((0, 0), window=checkbox_frame, anchor="nw", width=350)
+            
+            # Configure scroll region when frame size changes
+            checkbox_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            
+            # Configure mouse wheel scrolling
+            def _on_mousewheel(event, canvas):
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            
+            canvas.bind_all("<MouseWheel>", lambda e, c=canvas: _on_mousewheel(e, c))
+            
+            # Pack canvas and scrollbar
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Custom keywords section
+        custom_frame = ttk.LabelFrame(main_frame, text="Custom Keywords", padding="10")
+        custom_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.custom_entry = ttk.Entry(custom_frame)
+        self.custom_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        add_btn = ttk.Button(custom_frame, text="Add", command=self.add_custom_keyword)
+        add_btn.pack(side=tk.LEFT)
+
+        # Selected keywords display
+        selected_frame = ttk.LabelFrame(main_frame, text="Selected Keywords", padding="10")
+        selected_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.selected_text = tk.Text(selected_frame, height=3, wrap=tk.WORD)
+        self.selected_text.pack(fill=tk.X)
+        self.selected_text.config(state=tk.DISABLED)
+
+        # Buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Button(btn_frame, text="OK", command=self.dialog.destroy).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_frame, text="Clear All", command=self.clear_all).pack(side=tk.RIGHT)
+
+        # Bind the Entry key event
+        self.custom_entry.bind('<Return>', lambda e: self.add_custom_keyword())
+
+    def toggle_keyword(self, keyword):
+        """Toggle keyword selection based on checkbox state"""
+        if self.keyword_vars[keyword].get():
+            self.selected_keywords.add(keyword)
+        else:
+            self.selected_keywords.discard(keyword)
+        self.update_selected_display()
+
+    def add_custom_keyword(self):
+        keyword = self.custom_entry.get().strip()
+        if keyword and keyword not in self.selected_keywords:
+            self.selected_keywords.add(keyword)
+            self.custom_keywords.add(keyword)
+            self.custom_entry.delete(0, tk.END)
+            self.update_selected_display()
+
+    def clear_all(self):
+        self.selected_keywords.clear()
+        self.custom_keywords.clear()
+        # Reset all checkbuttons
+        for var in self.keyword_vars.values():
+            var.set(False)
+        self.update_selected_display()
+
+    def update_selected_display(self):
+        self.selected_text.config(state=tk.NORMAL)
+        self.selected_text.delete(1.0, tk.END)
+        if self.selected_keywords:
+            self.selected_text.insert(tk.END, ', '.join(sorted(self.selected_keywords)))
+        self.selected_text.config(state=tk.DISABLED)
+
+    def get_keywords(self):
+        return ' '.join(self.selected_keywords)
+    
 
 class WallpaperSlideshow:
     def __init__(self, flickr_api_key, flickr_api_secret, download_dir="wallpapers"):
@@ -41,7 +207,10 @@ class WallpaperSlideshow:
         self.timer_active = True
         self.current_wallpaper = None
         self.drag_data = {"x": 0, "y": 0}
-        
+
+        # Add search keywords tracking
+        self.current_search_query = "nature"  # Default query
+
         # Initialize UI elements
         self.button_window = None
         self.icon = None
@@ -91,7 +260,7 @@ class WallpaperSlideshow:
         )
         self.change_button.pack(pady=5)
 
-       # Timer control button
+        # Timer control button
         self.timer_button = tk.Button(
             self.frame,
             text="Pause Timer",
@@ -121,6 +290,21 @@ class WallpaperSlideshow:
         )
         self.favorite_button.pack(pady=5)
 
+        # Add keyword selection button
+        self.keyword_button = tk.Button(
+            self.frame,
+            text="Select Keywords",
+            command=self.open_keyword_dialog,
+            bg='#E91E63',  # Pink color
+            fg='white',
+            relief='flat',
+            pady=8,
+            padx=15,
+            font=('Segoe UI', 9),
+            cursor='hand2'
+        )
+        self.keyword_button.pack(pady=5)
+
         # Load from favorites button
         self.load_favorite_button = tk.Button(
             self.frame,
@@ -136,6 +320,20 @@ class WallpaperSlideshow:
         )
         self.load_favorite_button.pack(pady=5)
 
+        # Add Quit button
+        self.quit_button = tk.Button(
+            self.frame,
+            text="Quit",
+            command=self.quit_app,
+            bg='#f44336',  # Red color
+            fg='white',
+            relief='flat',
+            pady=8,
+            padx=15,
+            font=('Segoe UI', 9),
+            cursor='hand2'
+        )
+        self.quit_button.pack(pady=5)
 
         # Status label
         self.status_label = tk.Label(
@@ -148,10 +346,12 @@ class WallpaperSlideshow:
         self.status_label.pack(pady=(5, 2))
         
         # Bind dragging events to all widgets
-        for widget in (self.frame, self.change_button, self.timer_button, self.favorite_button, self.load_favorite_button):
+        for widget in (self.frame, self.change_button, self.timer_button, 
+                    self.favorite_button, self.load_favorite_button, 
+                    self.keyword_button, self.quit_button):  # Added quit_button to draggable widgets
             widget.bind('<Button-1>', self.start_drag)
             widget.bind('<B1-Motion>', self.drag)
-         
+        
         # Position window at the right side, vertically centered
         # First, update the window to calculate its actual size
         self.button_window.update_idletasks()
@@ -173,6 +373,7 @@ class WallpaperSlideshow:
         
         # Protocol handler for window close button
         self.button_window.protocol("WM_DELETE_WINDOW", self.toggle_button)
+
 
     def toggle_timer(self):
         """Toggle the automatic wallpaper timer"""
@@ -329,17 +530,32 @@ class WallpaperSlideshow:
             self.logger.error(f"Error in force_new_wallpaper: {e}")
             self.update_status("Error changing wallpaper", '#f44336')
 
-    def download_image(self, query="nature"):
+    def open_keyword_dialog(self):
+        """Open the keyword selection dialog"""
+        dialog = KeywordSelectionDialog(self.button_window)
+        self.button_window.wait_window(dialog.dialog)
+        
+        # Update the search query if keywords were selected
+        keywords = dialog.get_keywords()
+        if keywords:
+            self.current_search_query = keywords
+            self.update_status(f"Search keywords updated: {keywords}", '#4CAF50')
+            threading.Timer(3, lambda: self.update_status("Ready")).start()
+
+
+    def download_image(self, query=None):
         """Download a random image from Flickr based on query"""
         try:
             # Flickr API endpoint for photo search
             base_url = "https://www.flickr.com/services/rest/"
             
+            search_query = query or self.current_search_query
+
             # Parameters for the API request
             params = {
                 'method': 'flickr.photos.search',
                 'api_key': self.flickr_api_key,
-                'text': query,
+                'text': search_query,
                 'license': '4,5,6,7',  # Use Creative Commons licensed photos
                 'sort': 'relevance',
                 'media': 'photos',
