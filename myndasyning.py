@@ -183,19 +183,22 @@ class KeywordSelectionDialog:
     
 
 class WallpaperSlideshow:
-    def __init__(self, flickr_api_key, flickr_api_secret, download_dir="wallpapers"):
+    def __init__(self, pexels_api_key, download_dir="wallpapers"):
         # Set up logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
-        self.flickr_api_key = flickr_api_key
-        self.flickr_api_secret = flickr_api_secret
+        self.pexels_api_key = pexels_api_key
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(exist_ok=True)
         
         # Create favorites directory
         self.favorites_dir = Path("wallpapers")
         self.favorites_dir.mkdir(exist_ok=True)
+
+        # Create Spotlight directory
+        self.spotlight_dir = Path("Spotlight")
+        self.spotlight_dir.mkdir(parents=True, exist_ok=True)
 
         # Windows API constant for setting wallpaper
         self.SPI_SETDESKWALLPAPER = 0x0014
@@ -320,6 +323,21 @@ class WallpaperSlideshow:
         )
         self.load_favorite_button.pack(pady=5)
 
+        # Load from Spotlight button
+        self.load_spotlight_button = tk.Button(
+            self.frame,
+            text="Load from Spotlight",
+            command=self.load_from_spotlight,
+            bg='#FF5722',  # Deep orange color
+            fg='white',
+            relief='flat',
+            pady=8,
+            padx=15,
+            font=('Segoe UI', 9),
+            cursor='hand2'
+        )
+        self.load_spotlight_button.pack(pady=5)
+
         # Add Quit button
         self.quit_button = tk.Button(
             self.frame,
@@ -348,7 +366,8 @@ class WallpaperSlideshow:
         # Bind dragging events to all widgets
         for widget in (self.frame, self.change_button, self.timer_button, 
                     self.favorite_button, self.load_favorite_button, 
-                    self.keyword_button, self.quit_button):  # Added quit_button to draggable widgets
+                    self.keyword_button, self.load_spotlight_button,  # Added load_spotlight_button to draggable widgets
+                    self.quit_button):  # Added quit_button to draggable widgets
             widget.bind('<Button-1>', self.start_drag)
             widget.bind('<B1-Motion>', self.drag)
         
@@ -374,6 +393,40 @@ class WallpaperSlideshow:
         # Protocol handler for window close button
         self.button_window.protocol("WM_DELETE_WINDOW", self.toggle_button)
 
+    def load_from_spotlight(self):
+        """Load and set wallpaper from Spotlight folder"""
+        try:
+            # Check if Spotlight directory exists and has files
+            if not self.spotlight_dir.exists() or not any(self.spotlight_dir.glob("*.jpg")):
+                self.update_status("No Spotlight images found", '#f44336')
+                return
+
+            # Open file dialog in Spotlight directory
+            filepath = filedialog.askopenfilename(
+                initialdir=self.spotlight_dir,
+                title="Select Spotlight Wallpaper",
+                filetypes=(("JPEG files", "*.jpg"), ("All files", "*.*"))
+            )
+
+            if filepath:  # If a file was selected
+                # Set as wallpaper
+                self.set_wallpaper(filepath)
+                self.current_wallpaper = filepath
+                
+                # Pause the timer
+                if self.timer_active:
+                    self.toggle_timer()  # This will pause the timer
+                
+                self.update_status("Spotlight wallpaper set!", '#4CAF50')
+                threading.Timer(3, lambda: self.update_status("Ready")).start()
+                
+                self.logger.info(f"Loaded Spotlight wallpaper: {filepath}")
+            else:
+                self.update_status("No file selected", '#FF9800')
+
+        except Exception as e:
+            self.logger.error(f"Error loading Spotlight image: {e}")
+            self.update_status("Error loading Spotlight image", '#f44336')
 
     def toggle_timer(self):
         """Toggle the automatic wallpaper timer"""
@@ -544,54 +597,39 @@ class WallpaperSlideshow:
 
 
     def download_image(self, query=None):
-        """Download a random image from Flickr based on query"""
+        """Download a random image from Pexels based on query"""
         try:
-            # Flickr API endpoint for photo search
-            base_url = "https://www.flickr.com/services/rest/"
+            # Pexels API endpoint
+            base_url = "https://api.pexels.com/v1/search"
             
             search_query = query or self.current_search_query
 
             # Parameters for the API request
+            headers = {
+                'Authorization': self.pexels_api_key
+            }
             params = {
-                'method': 'flickr.photos.search',
-                'api_key': self.flickr_api_key,
-                'text': search_query,
-                'license': '4,5,6,7',  # Use Creative Commons licensed photos
-                'sort': 'relevance',
-                'media': 'photos',
-                'extras': 'url_k,owner_name',  # Request large size (2048px) and photographer name
-                'format': 'json',
-                'nojsoncallback': 1,
-                'per_page': 100,
-                'page': 1,
-                'content_type': 1,  # Photos only
-                'safe_search': 1,  # Safe content only
-                'min_taken_date': '2000-01-01'  # Ensure reasonable photo quality
+                'query': search_query,
+                'per_page': 1,
+                'page': random.randint(1, 1000)  # Random page to get a random image
             }
             
             # Get image list
-            response = requests.get(base_url, params=params)
+            response = requests.get(base_url, headers=headers, params=params)
             response.raise_for_status()
             
             data = response.json()
             
-            if not data.get('photos', {}).get('photo', []):
+            if not data.get('photos', []):
                 self.logger.error("No images found for the query")
                 return None
             
-            # Filter for photos that have the 'url_k' (large size) available
-            suitable_photos = [photo for photo in data['photos']['photo'] if 'url_k' in photo]
+            # Choose the first image from the results
+            photo = data['photos'][0]
             
-            if not suitable_photos:
-                self.logger.error("No suitable high-resolution images found")
-                return None
-            
-            # Choose a random image from the results
-            photo = random.choice(suitable_photos)
-            
-            # Get the large version of the image
-            image_url = photo['url_k']
-            photographer = photo['ownername']
+            # Get the URL of the image
+            image_url = photo['src']['original']
+            photographer = photo.get('photographer', 'Unknown')
             
             # Download the image
             image_response = requests.get(image_url)
@@ -688,9 +726,8 @@ class WallpaperSlideshow:
             self.logger.error(f"Error in main loop: {e}")
 
 if __name__ == "__main__":
-    # You'll need to sign up for a Flickr API key at: https://www.flickr.com/services/apps/create/
-    FLICKR_API_KEY = "da65ad8de193149ff9348abf03c231db"
-    FLICKR_API_SECRET = "81afa406bfe808fb"
+    # You'll need to sign up for a Pexels API key at: https://www.pexels.com/api/
+    PEXELS_API_KEY = "LxVBSuTpkX1sN2B8fl5kKMAzF806mnfeb6VuNhnO6v9e7RlcjCGv2YWv"
     
-    slideshow = WallpaperSlideshow(FLICKR_API_KEY, FLICKR_API_SECRET)
+    slideshow = WallpaperSlideshow(PEXELS_API_KEY)
     slideshow.run(interval_minutes=30, query="nature")
